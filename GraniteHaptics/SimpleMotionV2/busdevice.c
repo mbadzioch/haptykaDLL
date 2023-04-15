@@ -2,8 +2,8 @@
 #include "user_options.h"
 
 #include "drivers/serial/pcserialport.h"
-//#include "drivers/tcpip/tcpclient.h"
-//#include "drivers/ftdi_d2xx/sm_d2xx.h"
+#include "drivers/tcpip/tcpclient.h"
+#include "drivers/ftdi_d2xx/sm_d2xx.h"
 
 #include <string.h>
 #include <errno.h>
@@ -31,7 +31,6 @@ typedef struct _SMBusDevice
     BusdeviceOpen busOpenCallback;
     BusdeviceReadBuffer busReadCallback;
     BusdeviceWriteBuffer busWriteCallback;
-    BusdeviceMiscOperation busMiscOperationCallback;
     BusdeviceClose busCloseCallback;
 } SMBusDevice;
 
@@ -60,13 +59,13 @@ smbusdevicehandle smBDOpen( const char *devicename )
     smbusdevicehandle h;
 
     //try opening with all drivers:
-    h=smBDOpenWithCallbacks( devicename, serialPortOpen, serialPortClose, serialPortRead, serialPortWrite, serialPortMiscOperation );
+    h=smBDOpenWithCallbacks( devicename, serialPortOpen, serialPortClose, serialPortRead, serialPortWrite );
     if(h>=0) return h;//was success
-    //h=smBDOpenWithCallbacks( devicename, tcpipPortOpen, tcpipPortClose, tcpipPortRead, tcpipPortWrite, tcpipMiscOperation );
-    //if(h>=0) return h;//was success
+   // h=smBDOpenWithCallbacks( devicename, tcpipPortOpen, tcpipPortClose, tcpipPortRead, tcpipPortWrite );
+   // if(h>=0) return h;//was success
 #ifdef FTDI_D2XX_SUPPORT
-   // h=smBDOpenWithCallbacks( devicename, d2xxPortOpen, d2xxPortClose, d2xxPortRead, d2xxPortWrite, d2xxPortMiscOperation );
-  //  if(h>=0) return h;//was success
+    h=smBDOpenWithCallbacks( devicename, d2xxPortOpen, d2xxPortClose, d2xxPortRead, d2xxPortWrite );
+    if(h>=0) return h;//was success
 #endif
 #else
     smDebug( -1, SMDebugHigh, "smBDOpen ENABLE_BUILT_IN_DRIVERS is not defined during SM library compile time. smOpenBus not supported in this case, see README.md.");
@@ -79,7 +78,7 @@ smbusdevicehandle smBDOpen( const char *devicename )
 
 
 
-smbusdevicehandle smBDOpenWithCallbacks(const char *devicename, BusdeviceOpen busOpenCallback, BusdeviceClose busCloseCallback , BusdeviceReadBuffer busReadCallback, BusdeviceWriteBuffer busWriteCallback, BusdeviceMiscOperation busMiscOperationCallback )
+smbusdevicehandle smBDOpenWithCallbacks(const char *devicename, BusdeviceOpen busOpenCallback, BusdeviceClose busCloseCallback , BusdeviceReadBuffer busReadCallback, BusdeviceWriteBuffer busWriteCallback)
 {
     int handle;
     smbool success;
@@ -101,7 +100,6 @@ smbusdevicehandle smBDOpenWithCallbacks(const char *devicename, BusdeviceOpen bu
     BusDevice[handle].busOpenCallback=busOpenCallback;
     BusDevice[handle].busWriteCallback=busWriteCallback;
     BusDevice[handle].busReadCallback=busReadCallback;
-    BusDevice[handle].busMiscOperationCallback=busMiscOperationCallback;
     BusDevice[handle].busCloseCallback=busCloseCallback;
 
     //try opening
@@ -111,18 +109,10 @@ smbusdevicehandle smBDOpenWithCallbacks(const char *devicename, BusdeviceOpen bu
         return -1; //failed to open
     }
 
-    BusDevice[handle].opened=smtrue;
+    //success
     BusDevice[handle].txBufferUsed=0;
     BusDevice[handle].cumulativeSmStatus=0;
-
-    //purge
-    if(smBDMiscOperation(handle,MiscOperationPurgeRX)==smfalse)
-    {
-        smBDClose(handle);
-        return -1; //failed to purge
-    }
-
-    //success
+    BusDevice[handle].opened=smtrue;
     return handle;
 }
 
@@ -204,18 +194,6 @@ smbool smBDRead( const smbusdevicehandle handle, smuint8 *byte )
         return smtrue;
     }
 }
-
-//returns true if sucessfully
-smbool smBDMiscOperation(const smbusdevicehandle handle , BusDeviceMiscOperationType operation)
-{
-    //check if handle valid & open
-    if( smIsBDHandleOpen(handle)==smfalse ) return smfalse;
-
-    BusDevice[handle].txBufferUsed=0;
-
-    return BusDevice[handle].busMiscOperationCallback(BusDevice[handle].busDevicePointer,operation);
-}
-
 
 //BUS DEVICE INFO FETCH FUNCTIONS:
 

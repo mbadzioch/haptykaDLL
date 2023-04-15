@@ -231,9 +231,7 @@
 //possible values:
 	#define SMP_BUS_MODE_DFU 0
 	#define SMP_BUS_MODE_NORMAL 1
-    /* Busy mode: device responds only to Granity's detect nodes message and Granity will display message that device can't be connected in this mode. I.e. EtherFOX in EC mode. */
-    #define SMP_BUS_MODE_BUSY 2
-    #define _SMP_BUS_MODE_LAST 2
+	#define _SMP_BUS_MODE_LAST 1
 
 /* SMP_SM_VERSION returns current SM protocol version */
 #define SMP_SM_VERSION 3
@@ -316,9 +314,6 @@
  *  -1 bit CB1_CLEARFAULTS
  *  read data is same format as in ALT1
  *
- *  format 3 (ALT3)
- *  This is specific for simucube application mode only on available only in some drive models.
- *
  * Note:
  * Before reading/writing this, check if device supports this by checking capability flag DEVICE_CAPABILITY1_SELECTABLE_FAST_UPDATE_CYCLE_FORMAT.
  *
@@ -329,53 +324,7 @@
 	#define FAST_UPDATE_CYCLE_FORMAT_DEFAULT 0
 	#define FAST_UPDATE_CYCLE_FORMAT_ALT1 1
 	#define FAST_UPDATE_CYCLE_FORMAT_ALT2 2
-	#define FAST_UPDATE_CYCLE_FORMAT_ALT3 3
-	#define FAST_UPDATE_CYCLE_FORMAT_ALT4 4
 
-/* Intro: SMP_BINARY_DATA and SMP_INIT_BINARY_DATA parameters allow reading & writing binary data from pre-defined buffers. i.e. text strings or calibration data blob.
- *
- * Reading and writing data is done by sequentially writing or reading SMP_BINARY_DATA after SMP_INIT_BINARY_DATA_MODE has been properly set.
- * I.e. set BINARY_DATA_MODE = BINARY_DATA_MODE_BLOCK_CALIBRATION|BINARY_DATA_MODE_FLAG_ERASE.
- *
- * Read parameter address (SMP_BINARY_DATA|SMP_MAX_VALUE_MASK) to get block size in bytes. If returned size is -1, it means invalid settings in SMP_BINARY_DATA_MODE.
- *
- * The write/read unit is 16 bits.
- *
- * Binary data parameter availability: to check whether SMP_BINARY_DATA is supported on target device, first check that DEVICE_CAPABILITY1_SUPPORTS_SMP_PARAMETER_PROPERTIES_MASK is set and
- * then read parameter with address (SMP_BINARY_DATA|SMP_PROPERTIES_MASK) and check that it returns valid (no SM error) non-zero value.
- *
- * Note: if write or read to this parameter fails, it could mean one of following:
- * - block does not support given operation, some buffers may be write or read only
- * - SMP_BINARY_DATA_MODE is set incorrectly
- * - read/write operation is performed out of bounds (overflow)
- * - offset is not given in valid granularity
- */
-#define SMP_BINARY_DATA 18
-/* SMP_BINARY_DATA_MODE initializes access mode to the buffer data. This must be written before reading/writing to SMP_BINARY_DATA.
- *
- * Accepted value is bit field, options defined below.
- *
- * Erasing block: depending on block, it may be cleared to zeroes (0x00) or ones (0xff). Erasing may take up to one second of time depending on block. User must not send
- * any new SM commands to the bus during erase time because device performing erase may be offline during that time and cause error in communication if communication attempt
- * is made during erase.
- *
- * Bits starting from LSB:
- * 8 = buffer ID (one of BINARY_DATA_MODE_BLOCK_)
- * 8 = access mode flags (or'ed combination of BINARY_DATA_MODE_FLAG_ defines)
- * 16 = starting offset of read/write with SMP_BINARY_DATA
- */
-#define SMP_BINARY_DATA_MODE 19
-	//data blocks:
-	#define BINARY_DATA_MODE_BLOCK_CALIBRATION 0 //id 0 = motor calibration data block. note that starting offset must be multiple of 2 for this block.
-	#define BINARY_DATA_MODE_BLOCK_POWER_HISTOGRAM 1 //id 1 = power consumption histogram data
-	//...more blocks to be defined here
-	//flags:
-	#define BINARY_DATA_MODE_FLAG_ERASE BV(8) //if true, then the defined block will be erased immediately by writing this bit to SMP_BINARY_DATA_MODE. not all blocks support this.
-
-/* SMP_BINARY_DATA_MODE_ARGS is a helper macro to generate value for SMP_BINARY_DATA_MODE. Example:
- * smSetParameter( .., .., SMP_BINARY_DATA_MODE, SMP_BINARY_DATA_MODE_ARGS( BINARY_DATA_MODE_BLOCK_CALIBRATION, BINARY_DATA_MODE_FLAG_ERASE, 500 )
-*/
-#define SMP_BINARY_DATA_MODE_ARGS(block,flags,offset) ((smuint32(block)&0xff) | (smuint32(flags)&0xff00) | ((smuint32(offset)<<16)&0xffff0000))
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SimpleMotion device specific parameter definitions start below. Note: all parameters are not available in all device types/versions. To test which are available,
@@ -385,7 +334,6 @@
 
 //choose input from SMP_DIGITAL_IN_VALUES_1 to be used as home switch.
 //note: this might not have effect depending on other parameters (i.e. if output is consumed by some built-in functionality)
-//written value: the index of digital input pin (i.e. GPI1=0, GPI2=1, GPI3=2, ... HSIN1=5 etc)
 #define SMP_HOME_SWITCH_SOURCE_SELECT 100
 
 //choose signal to be forwarded into aux output of drive (on IONI it is GPO5)
@@ -498,7 +446,6 @@
 #define SMP_INCREMENTAL_POS_TARGET SMP_INCREMENTAL_SETPOINT
 #define SMP_ABSOLUTE_POS_TARGET SMP_ABSOLUTE_SETPOINT
 
-/*for SMP_FAULTS and SMP_STATUS descriptions, see https://granitedevices.com/wiki/Drive_status_%26_fault_bits_explained */
 #define SMP_FAULTS 552
 	//bitfield bits:
 	#define FLT_FOLLOWERROR	BV(1)
@@ -516,7 +463,6 @@
 	#define FLT_RANGE BV(13)
 	#define FLT_PSTAGE_FORCED_OFF BV(14)
 	#define FLT_HOST_COMM_ERROR BV(15)
-	#define FLT_CONFIG BV(16)
 	//IO side macros
 	#define FLT_GC_COMM BV(15)
 	#define FLT_QUEUE_FULL FLT_PROGRAM_OR_MEM
@@ -525,8 +471,6 @@
 	#define FLT_ALLOC FLT_PROGRAM_OR_MEM //memory etc allocation failed
 
 #define SMP_FIRST_FAULT 8115
-
-/*for SMP_FAULTS and SMP_STATUS descriptions, see https://granitedevices.com/wiki/Drive_status_%26_fault_bits_explained */
 #define SMP_STATUS 553
 	//bitfield bits:
 	#define STAT_RESERVED_ BV(0)
@@ -551,8 +495,6 @@
 	 */
 	#define STAT_STANDING_STILL BV(16)
 	#define STAT_QUICK_STOP_ACTIVE BV(17)
-	#define STAT_SAFE_TORQUE_MODE_ACTIVE BV(18)
-	#define STAT_STANDBY BV(19) //automatic standby in simucube
 
 #define SMP_SYSTEM_CONTROL 554 //writing 1 initiates settings save to flash, writing 2=device restart, 4=abort buffered motion
 	//possible values listed
@@ -591,16 +533,9 @@
 	#define SMP_SYSTEM_CONTROL_START_COMMUTATION_SENSOR_AUTOSETUP 4096
 	//load settings that are saved in device flash memory. useful when changing parameters on the fly and want to restore originals, or when app is started and drive may have unknown parameter modifications active.
 	#define SMP_SYSTEM_CONTROL_RESTORE_SAVED_CONFIG 8192
-	//triggers parameter activation for some buffered/deladed parameters such as SMP_TORQUE_BIQUAD_FILTERnnn parameters that do not immediately take effect to avoid glitches
-	#define SMP_SYSTEM_CONTROL_TRIGGER_PENDING_PARAMETER_ACTIVATION 16384
 	//write SM bus SM_CRCINIT constant modifier. special purposes only, don't use if unsure because
 	//it is one time programmable variable (permanently irreversible operation, can't be ever reset to default by provided methods)
 	#define SMP_SYSTEM_CONTROL_MODIFY_CRCINIT 262144
-	#define SMP_SYSTEM_CONTROL_EXIT_STANDBY 32768 //exit simucube standby mode
-	//following three commands execute FW version specific functions (i.e. debugging or customized FW functions)
-	#define SMP_SYSTEM_CONTROL_TRIGGER_FW_SPECIFIC_FUNC1 10000000
-	#define SMP_SYSTEM_CONTROL_TRIGGER_FW_SPECIFIC_FUNC2 10000001
-	#define SMP_SYSTEM_CONTROL_TRIGGER_FW_SPECIFIC_FUNC3 10000002
 
 	//follow error tolerance for position control:
 #define SMP_POS_FERROR_TRIP 555
@@ -658,8 +593,22 @@
 #define SMP_ABS_IN_SCALER 564
 
 //FB1 device resolution, pulses per rev
-#define SMP_ENCODER_PPR 565 //note this is not used if DEVICE_CAPABILITY1_COMMUTATION_CONFIG_V2 is set, see SMP_FBD1_COUNTS_PER_POLEPAIR instead
+#define SMP_ENCODER_PPR 565 //note this is not used if DEVICE_CAPABILITY1_ENCODER_INTERFACE_V2 is set, see SMP_FBD1_COUNTS_PER_POLEPAIR instead
 
+/*
+ * defines encoder resolutions:
+ * -if rotary encoder, then it's counts per revolution (if FLAG_FBDx_IS_LINEAR_ENCODER is 0)
+ * -if linear encoder, then it's counts/100mm (if FLAG_FBDx_IS_LINEAR_ENCODER is 1)
+ * note: supported only if DEVICE_CAPABILITY1_ENCODER_INTERFACE_V2 is set
+ */
+#define SMP_FBD1_RESOLUTION 576
+#define SMP_FBD2_RESOLUTION 577
+
+/*
+ * if using linear motor, defines pole pair length in micrometers
+ * note: supported only if DEVICE_CAPABILITY1_ENCODER_INTERFACE_V2 is set
+ */
+#define SMP_LINEAR_MOTOR_POLE_PAIR_PITCH 578
 
 /*
  * AC motor pole configuration
@@ -668,9 +617,10 @@
  * -dc motor - no effect
  * -AC/bldc motor, number of polepairs
  * -linear motor (FLAG_IS_LINEAR_MOTOR is set), then this defines motor pole pair pitch in micrometers
- *  note: linear motor mode supported only if DEVICE_CAPABILITY1_COMMUTATION_CONFIG_V2 is set
+ *  note: linear motor mode supported only if DEVICE_CAPABILITY1_ENCODER_INTERFACE_V2 is set
  */
 #define SMP_MOTOR_POLEPAIRS 566 /*old name kept for compatibility*/
+#define SMP_AC_MOTOR_POLE_CONFIG 566 /*new name*/
 
 
 //flag bits & general
@@ -692,6 +642,9 @@
     #define FLAG_MECH_BRAKE_DURING_PHASING BV(15)
 	#define FLAG_LIMIT_SWITCHES_NORMALLY_OPEN_TYPE BV(16)
 	#define FLAG_ENABLE_MOTOR_SOUND_NOTIFICATIONS BV(17)
+	#define FLAG_FBD1_IS_LINEAR_ENCODER BV(18)
+	#define FLAG_FBD2_IS_LINEAR_ENCODER BV(19)
+	#define FLAG_IS_LINEAR_MOTOR BV(20) /* true if linear motor, changes effect of SMP_MOTOR_POLEPAIRS. supported if DEVICE_CAPABILITY1_ENCODER_INTERFACE_V2 is set */
 #define SMP_MOTION_FAULT_THRESHOLD 568
 #define SMP_HV_VOLTAGE_HI_LIMIT 569
 #define SMP_HV_VOLTAGE_LOW_LIMIT 570
@@ -742,7 +695,7 @@
 //anti dither limits
 #define SMP_ANTIDITHER_MODE 230
 
-//torque modifiers & effects.
+//torque modifiers & effects
 /*SMP_TORQUE_NOTCH_FILTER contains 3 values in different bit positions:
  * 0-7 (lowest byte), attenuation in 0.1dB steps and value V=1-255 means attenuation of (-V-255)/10 dB gain.  if V set 0, use notch filter instead of peaking with "infinite" attenuation. value 255 disables notch filter.
  * 8-15, Q factor in 0.1 steps. Minimum is 0.1, below that filter is disabled.
@@ -761,91 +714,17 @@
 #define SMP_TORQUE_EFFECT_INERTIA 243
 //special smoothing filter. 0=disabled, other choices application dependent. this value is not saved in flash at the time of release, set it in run-time.
 #define SMP_SETPOINT_FILTER_MODE 244
-//static torque reduction effect, scale 0..10000 = 0..100% reduction
-#define SMP_TORQUE_EFFECT_STATIC_TORQUE_REDUCTION 245
-//static torque reduction speed, 1000=default, smaller=slower, higher=faster
-#define SMP_TORQUE_EFFECT_STATIC_TORQUE_REDUCTION_SPEED 246
-//torque nonlinearity. gamma function: normalized_torque_input^(1000/SMP_TORQUE_EFFECT_GAMMA), scale 1000=1.0 gamma.
-#define SMP_TORQUE_EFFECT_GAMMA 247
-//separate damping value for center region of motion range. same scale as SMP_TORQUE_EFFECT_DAMPING. see also SMP_TORQUE_EFFECTS_CENTER_POSITION.
-#define SMP_TORQUE_EFFECT_CENTER_DAMPING 248
-//angle span where SMP_TORQUE_EFFECT_CENTER_DAMPING is applied. outside of span SMP_TORQUE_EFFECT_DAMPING is applied. value in degrees from - to + end. resulting damping will change smoothly by cosine function within the span.
-#define SMP_TORQUE_EFFECT_CENTER_DAMPING_ANGLE_SPAN 249
-//slew rate limit, value in Nm/s. requires that motor torque constant SMP_MOTOR_TORQUE_OR_FORCE_CONSTANT has been set. value 0 disables the limiter (default).
-#define SMP_TORQUE_SLEW_RATE_LIMIT 250
-/* Center offset of wheel in in scale of unsigned 24 bits.
- * Writing -1 here will automatically set this value so that current position becomes center.
- * Value of this will affect the value output in fast update command ALT4 format and various simucube specific functions (like center damping and wheel safety rotation limit). */
-#define SMP_SIMUCUBE_WHEEL_CENTER_OFFSET 251
-
-//various Simucube option flags
-#define SMP_SIMCUBE_OPTIONS 252
-	// two lowest bits of flags define hands off the wheel detection sensitivity (automatically activates temporary safe mode). do not binary OR multiple HANDS_OFF_SENSITIVITY_ values, pick just one.
-	#define SMP_SIMCUBE_OPTIONS_HANDS_OFF_SENSITIVITY_HIGH 3 // default
-	#define SMP_SIMCUBE_OPTIONS_HANDS_OFF_SENSITIVITY_MEDIUM 2
-	#define SMP_SIMCUBE_OPTIONS_HANDS_OFF_SENSITIVITY_LOW 1
-	#define SMP_SIMCUBE_OPTIONS_HANDS_OFF_SENSITIVITY_OFF 0
-	#define MASK_SMP_SIMCUBE_OPTIONS_HANDS_OFF_SENSITIVITY 3 // binary and SMP_SIMCUBE_OPTION_FLAGS and MASK_SMP_SIMCUBE_OPTION_FLAGS_HANDS_OFF_SENSITIVITY to identify which HANDS_OFF_SENSITIVITY setting is set.
-	#define SMP_SIMCUBE_OPTIONS_ENABLE_TORQUE_SATURATION_INDICATION_SOUND BV(2)
-	#define SMP_SIMCUBE_OPTIONS_REDUCE_RESONANCE BV(3)
-	#define SMP_SIMCUBE_OPTIONS_TRACKING_CENTER_DAMPING_POSITION BV(4) // if 1, then fixed center angle offset SMP_TORQUE_EFFECTS_CENTER_POSITION has is superseded by tracking center position
-//friction effect stiffness variable for SC2U. Value 100=normal, 50=low, 200=high.
-#define SMP_TORQUE_EFFECT_FRICTION_STIFFNESS 253
-
-/* Experimental simucube filters.
- * All values 0-100, 0=off.
- * If experimental feature some day becomes non-experimental, it will be just renamed and left in place with same address.
- */
-#define SMP_SIMUCUBE_EXPERIMENTAL_FEATURE_1 254
-#define SMP_SIMUCUBE_EXPERIMENTAL_FEATURE_2 255
-#define SMP_SIMUCUBE_EXPERIMENTAL_FEATURE_3 256
-#define SMP_SIMUCUBE_EXPERIMENTAL_FEATURE_4 257
-#define SMP_SIMUCUBE_EXPERIMENTAL_FEATURE_5 258
-
-/* Torque setpoint biquad filters that run at full torque controller update frequency.
- * - Scale of values is 10 000 000=1.0.
-         	b0=1;
-        	b1=b2=a1=a2=0;
- * - Set values B0=10000000 and B1=B2=A1=A2=0 disable/bypass the filter (FW default)
- * - These are buffered variables and become effective only on boot and after SMP_SYSTEM_CONTROL_TRIGGER_PENDING_PARAMETER_ACTIVATION
- * - Each change of filter will reset filter state (may cause a bump)
- * - If DEVICE_CAPABILITY2_TORQUE_BIQUAD_FILTERS_V1, then filters run at 20kHz sample rate and 32 bits floating point precision.
- *
- * Note: design filters carefully. Make sure that filter is stable at single precision floating point precision and that it does not have greater than unity DC gain.
- */
-#define SMP_TORQUE_BIQUAD_FILTER1_B0 260
-#define SMP_TORQUE_BIQUAD_FILTER1_B1 261
-#define SMP_TORQUE_BIQUAD_FILTER1_B2 262
-#define SMP_TORQUE_BIQUAD_FILTER1_A1 263
-#define SMP_TORQUE_BIQUAD_FILTER1_A2 264
-
-#define SMP_TORQUE_BIQUAD_FILTER2_B0 265
-#define SMP_TORQUE_BIQUAD_FILTER2_B1 266
-#define SMP_TORQUE_BIQUAD_FILTER2_B2 267
-#define SMP_TORQUE_BIQUAD_FILTER2_A1 268
-#define SMP_TORQUE_BIQUAD_FILTER2_A2 269
 
 //secondary feedback loop 300-399
 //NOT IMPLEMENTED YET
 
 //current loop related 400-499
-//motor inductance and resistance, in milliohms and millihenries
+//direct torque gains, not used after VSD-E
+#define SMP_TORQ_P 401
+#define SMP_TORQ_I 402
+//motor inductance and resistance
 #define SMP_MOTOR_RES 405
 #define SMP_MOTOR_IND 406
-
-/* SMP_MOTOR_VOLTAGE_CONSTANT specifies motor Back EMF voltage per Hz (on ac/bldc/stepper motors) and on DC motor voltage per raw velocity feedback unit.
- * Scale:
- * - on AC/BLDC/stepper motors value is mV/Hz (peak of sine voltage, phase to neutral).
- *   (to get good estimate of this value, test how many revs/second (=S) motor turns at given DC supply voltage (U) and calculate:
- *   SMP_MOTOR_VOLTAGE_CONSTANT = U/2*PWMModulationDepth*1.15*MotorPoleCount/2*S*1000 = 287.5*PWMModulationDepth*U*MotorPoleCount/S.
- *   Typical values for PWMModulationDepth is 0.95 (actual model specfic value obtainable form GD Wiki drive specs).
- * - on brush DC motors value is uV/raw_velocity_fb_unit (phase to phase)
- *
- * The value is optional and value of 0 means that the constant is unspecified.
- *
- * Note: not supported in all devices
- */
-#define SMP_MOTOR_VOLTAGE_CONSTANT 407
 
 //continuous current limit mA
 #define SMP_TORQUELIMIT_CONT 410
@@ -858,8 +737,8 @@
 #define SMP_TORQUEFAULT_OC_TOLERANCE 421
 /* SMP_MOTOR_TORQUE_OR_FORCE_CONSTANT specifies motor torque (rotary motor) or force (linear motor) constant.
  * Scale:
- * - on rotary motors value is 10000*Nm/A (peak of sine)
- * - on linear motors value is 10000*N/A  (peak of sine)
+ * - on rotary motors value is 10000*Nm/A
+ * - on linear motors value is 10000*N/A
  * Amps are in peak of sine or DC
  *
  * The value is optional and value of 0 means that the constant is unspecified.
@@ -904,42 +783,21 @@
 #define SMP_PHASESEARCH_CURRENT 481
 /* Commutation angle congiuration, i.e. for hall sensors or absolute encoder. can be automatically set with SMP_SYSTEM_CONTROL_START_COMMUTATION_SENSOR_AUTOSET.
  * Format:
- * bits 0-15 LSB: commutation sensor initialization offset 0-65535 represents commutation angle offset 0-360 electical degrees
+ * bits 0-15 LSB: commutation sensor offset 0-65535 represents commutation angle offset 0-360 electical degrees
  * bit 16: invert sensor count direction
  * bit 17: enable commutation sensor
- *
- * Note: this is for devices where params 484-486
+ * bit 18-19: commutation sensor source, choices (supported only if DEVICE_CAPABILITY1_ENCODER_INTERFACE_V2 is set)
+ * 	00=Hall sensor
+ * 	01=Absoute sensor on FBD1
+ * 	10=Absolute sensor on FBD2
+ * 	11=reserved
+ * bits 20-31: reserved, always 0
  */
 #define SMP_COMMUTATION_SENSOR_CONFIG 482
 	#define SMP_COMMUTATION_SENSOR_CONFIG_ANGLE_MASK 0xFFFF
 	#define SMP_COMMUTATION_SENSOR_CONFIG_INVERT_MASK 0x10000
 	#define SMP_COMMUTATION_SENSOR_CONFIG_ENABLE_MASK 0x20000
-
-/* Following parameter is part of feedback sensor interface version 2.
- * To test whether drive supports this, test if the DEVICE_CAPABILITY1_COMMUTATION_CONFIG_V2 is set.
- * If this interface v2 is supported, then target device does not support parameters: SMP_COMMUTATION_SENSOR_CONFIG as
- * new interface has equivalents. */
-/* Number of FBD1 sensor position counts per motor pole count (set by SMP_MOTOR_POLEPAIRS).*/
-#define SMP_COMMUTATION_COUNTS_PER_POLE_PAIR_COUNT 483
-
-/* Following parameter is part of feedback sensor interface version 2.
- * To test whether drive supports this, test if the DEVICE_CAPABILITY1_COMMUTATION_CONFIG_V2 is set.
- * If this interface v2 is supported, then target device does not support parameters: SMP_COMMUTATION_SENSOR_CONFIG & FLAG_INVERT_ENCODER as
- * new interface has equivalents. */
-/* Commutation sensor initialization source */
-#define SMP_COMMUTATION_INIT_SOURCE 484
-		#define COMMUTATION_INIT_SOURCE_PHASING 0
-		#define COMMUTATION_INIT_SOURCE_HALL 1
-		#define COMMUTATION_INIT_SOURCE_HALL_INVERTED_DIRECTION 2
-		#define COMMUTATION_INIT_SOURCE_FB1_ABSOLUTE 3
-		#define _COMMUTATION_INIT_SOURCE_LAST 3
-
-/* Following parameter is part of feedback sensor interface version 2.
- * To test whether drive supports this, test if the DEVICE_CAPABILITY1_COMMUTATION_CONFIG_V2 is set.
- * If this interface v2 is supported, then target device does not support parameters: SMP_COMMUTATION_SENSOR_CONFIG as
- * new interface has equivalents. */
-/* Commutation sensor init offset for 0..360 electrical degrees equals value 0-65535 */
-#define SMP_COMMUTATION_INIT_OFFSET 485
+	#define SMP_COMMUTATION_SENSOR_SOURCE 0xC0000
 
 //low pass filter selector, value 0=100Hz, 9=3300Hz, 10=4700Hz, 11=unlimited (see Granity for all options):
 #define SMP_TORQUE_LPF_BANDWIDTH 490
@@ -961,20 +819,7 @@
 	#define SMP_FBD_SINCOS256X 8
 	#define SMP_FBD_RESERVED 9
 	#define SMP_FBD_SERIALDATA_PORT2 10 /* configured with SMP_SERIAL_ENC2_BITS */
-
-/* FB2 is secondary/aux feedback device (optional) to form a dual loop feedback system. has same allowed values than SMP_FB1_DEVICE_SELECTION. */
 #define SMP_FB2_DEVICE_SELECTION 494
-
-/* WIP, not yet implemented.
- *
- * Ratio of how many counts FB1 changes in relation to one FB2 count change.
- * Formula = 100000*FB2Counts/FB1Counts
- *
- * Note: value can be also negative when counting direction of FB2 is inverted compared to FB1
- *
- * Parameter requires that DEVICE_CAPABILITY2_SUPPORT_FB2_AUX_ENCODER is 1.
- */
-#define SMP_FB1_TO_FB2_COUPLING_RATIO 500
 
 //in 1/2500 seconds.
 #define SMP_GOAL_FAULT_FILTER_TIME 495
@@ -1082,14 +927,13 @@
 #define SMP_ABSPOSITION_LO_LIMIT 836
 
 //readouts
-#define SMP_ACTUAL_BUS_VOLTAGE 900 // scale: 10mV/count
-#define SMP_ACTUAL_TORQUE 901 // scale: torque is in legacy HW scale, 560 counts per Amp
-#define SMP_ACTUAL_VELOCITY_FB 902 // scale: number of encoder counts traveled in one position/velocity control cycle period (typ 400 us, to be sure, it's 1/SMP_PID_FREQUENCY)
-#define SMP_ACTUAL_POSITION_FB 903 // scale: encoder counts
+#define SMP_ACTUAL_BUS_VOLTAGE 900
+#define SMP_ACTUAL_TORQUE 901
+#define SMP_ACTUAL_VELOCITY_FB 902
+#define SMP_ACTUAL_POSITION_FB 903
 #define SMP_SCOPE_CHANNEL_VALUE 904
 #define SMP_SCOPE_CHANNEL_SELECT 905
 #define SMP_ACTUAL_POSITION_FB_NEVER_RESETTING 906 /*this is same than SMP_ACTUAL_POSITION_FB but does not reset to 0 on homing or init (it is always the original counter value at power-on)*/
-#define SMP_RAW_QUADRATURE_ENCODER_POSITION_FB 907 /*This is always readable main quadrature encoder counter value, this is updated in all [FBD] settings, even when [FBD]=None. Useful for open loop stepper monitoring. */
 
 #define SMP_MECH_BRAKE_RELEASE_DELAY 910
 #define SMP_MECH_BRAKE_ENGAGE_DELAY 911
@@ -1124,31 +968,35 @@
 
 #define SMP_CAPTURE_SOURCE 5020
 	//bitfield values (shift these with BV())
-	#define CAPTURE_TORQUE_TARGET 1 // scale: torque is in legacy HW scale, 560 counts per Amp
-	#define CAPTURE_TORQUE_ACTUAL 2 // scale: torque is in legacy HW scale, 560 counts per Amp
-	#define CAPTURE_VELOCITY_TARGET 3 // scale: number of encoder counts traveled in one position/velocity control cycle period (typ 400 us)
-	#define CAPTURE_VELOCITY_ACTUAL 4 // scale: number of encoder counts traveled in one position/velocity control cycle period (typ 400 us)
-	#define CAPTURE_POSITION_TARGET 5 // scale: encoder counts
-	#define CAPTURE_POSITION_ACTUAL 6 // scale: encoder counts
+	#define CAPTURE_TORQUE_TARGET 1
+	#define CAPTURE_TORQUE_ACTUAL 2
+	#define CAPTURE_VELOCITY_TARGET 3
+	#define CAPTURE_VELOCITY_ACTUAL 4
+	#define CAPTURE_POSITION_TARGET 5
+	#define CAPTURE_POSITION_ACTUAL 6
 	#define CAPTURE_FOLLOW_ERROR 7
-	#define CAPTURE_OUTPUT_VOLTAGE 8 // scale: 16384=100% of voltage supply
+	#define CAPTURE_OUTPUT_VOLTAGE 8
 	#define CAPTURE_BUS_VOLTAGE 9
 	#define CAPTURE_STATUSBITS 10
 	#define CAPTURE_FAULTBITS 11
+	#define CAPTURE_P_OUT 12
+	#define CAPTURE_I_OUT 13
+	#define CAPTURE_D_OUT 14
+	#define CAPTURE_FF_OUT 15
+	#define CAPTURE_RAW_POS 25
+	//8 bit signed values combined, only for return data, not for scope
+	#define CAPTURE_TORQ_AND_FERROR 26
 
 	//rest are availalbe in debug/development firmware only:
-	#define CAPTURE_PWM1 16 // scale: +/-16384=+/-100% duty cycle range
-	#define CAPTURE_PWM2 17 // scale: +/-16384=+/-100% duty cycle range
-	#define CAPTURE_PWM3 18 // scale: +/-16384=+/-100% duty cycle range
+	#define CAPTURE_PWM1 16
+	#define CAPTURE_PWM2 17
+	#define CAPTURE_PWM3 18
 	#define CAPTURE_DEBUG1 19
 	#define CAPTURE_DEBUG2 20
 	#define CAPTURE_CURRENT1 21
 	#define CAPTURE_CURRENT2 22
 	#define CAPTURE_ACTUAL_FLUX 23
 	#define CAPTURE_OUTPUT_FLUX 24
-	#define CAPTURE_TARGET_FLUX 26
-	#define CAPTURE_DEBUG3 27
-	#define CAPTURE_DEBUG4 28
 
 #define SMP_CAPTURE_TRIGGER 5011
 	//choices:
@@ -1158,22 +1006,14 @@
 	#define TRIG_TARGETCHANGE 3
 	#define TRIG_TARGETCHANGE_POS 4
 	#define TRIG_EXTERNAL_INPUT 5
-	#define TRIG_STATUSBITS_CHANGE 6
-	#define TRIG_DEBUG1 7
-	#define TRIG_DEBUG2 8
 
-#define SMP_CAPTURE_SAMPLERATE 5012 // scale: sample rate frequency in Hz = torque control update rate / (SMP_CAPTURE_SAMPLERATE+1). torque control update rate typically 20 kHz
+#define SMP_CAPTURE_SAMPLERATE 5012
 //rdonly
 #define SMP_CAPTURE_BUF_LENGHT 5013
 //SMP_CAPTURE_BEFORE_TRIGGER_PERCENTS sets how much samples will be preserved before trigger event. Value 0 is traditional, +n starts capture n percents before trigger (relative to whole capture length), -n after trigger. Value range -1000000%..+100%.
 #define SMP_CAPTURE_BEFORE_TRIGGER_PERCENTS 5014
+//SMP_CAPTURE_STATE, states: 0=idle (capture complete or not started), 1=waiting for trigger, 2=capturing. to start capture, write value 1 here starting from IONI FW V1110
 #define SMP_CAPTURE_STATE 5015
-	//note this parameter works differently in write and read directions. observer READ and WRITE tags below:
-	#define CAPTURE_STATE_READ_IDLE 0 //scope doing nothing, ready for new capture
-	#define CAPTURE_STATE_WRITE_START 1 //write 1 to start capturing with present settings
-	#define CAPTURE_STATE_READ_WAITING_TRIGGER 1 //when reads 1, scope is waiting for trigger to occur
-	#define CAPTURE_STATE_READ_BUSY 2 //scope capturing in progress
-	#define CAPTURE_STATE_WRITE_START_WITH_SAMPLE_AVERAGING 3 //start capturing with sampling with averaging of samples  (useful with low sample rates, check if this feature is supported by capability bit DEVICE_CAPABILITY2_SUPPORT_SCOPE_SAMPLE_AVERAGING)
 //this is looped 0-n to make samples 0-n readable from SMP_CAPTURE_BUFFER_GET_VALUE
 #define SMP_CAPTURE_BUFFER_GET_ADDR 5333
 #define SMP_CAPTURE_BUFFER_GET_VALUE 5334
@@ -1212,7 +1052,7 @@
 	#define DEVICE_CAPABILITY1_SELECTABLE_FAST_UPDATE_CYCLE_FORMAT BV(23) /*1 if device supports parameter SMP_FAST_UPDATE_CYCLE_FORMAT */
 	#define DEVICE_CAPABILITY1_CONTROL_BITS1_VERSION2 BV(24) /*drive implements CB1_QUICKSTOP_SET, CB1_QUICKSTOP_RELEASE, CB1_CLEARFAULTS, CB1_BYPASS_TRAJPLANNER bits in SMP_CONTROL_BITS1 */
 	#define DEVICE_CAPABILITY1_SUPPORTS_STAT_STANDING_STILL BV(25) /*drive implements STAT_STANDING_STILL status bit */
-	#define DEVICE_CAPABILITY1_COMMUTATION_CONFIG_V2 BV(26) /* new commutation sensor config  */
+	#define DEVICE_CAPABILITY1_ENCODER_INTERFACE_V2 BV(26)
 	#define DEVICE_CAPABILITY1_HAS_SECOND_SERIAL_ENCODER_PORT BV(27) /*true if device has two serial encoder inputs */
 	#define DEVICE_CAPABILITY1_SUPPORTS_SMP_PARAMETER_PROPERTIES_MASK BV(28) /*true if support for SMP_PARAMETER_PROPERTIES_MASK */
 	#define DEVICE_CAPABILITY1_HAS_TORQUE_OR_FORCE_CONSTANT_PARAMETER BV(29) /*true if SMP_TORQUE_OR_FORCE_CONSTANT parameter is supported */
@@ -1238,13 +1078,6 @@
     #define DEVICE_CAPABILITY2_SUPPORT_FORCE_CONTROL BV(14)
 	#define DEVICE_CAPABILITY2_LOW_LEVEL_GPIO BV(15)
 	#define DEVICE_CAPABILITY2_HAS_SMP_LIMIT_SW_FUNCTION_SOURCE BV(16) /*true if device supports parameter SMP_LIMIT_SW_FUNCTION_SOURCE*/
-	#define DEVICE_CAPABILITY2_SUPPORT_FB2_AUX_ENCODER BV(17) /* true if secondary feedback device supported */
-	#define DEVICE_CAPABILITY2_RETURN_SMP_STATUS_ON_FAILED_SUBPACKETS BV(18) /* if this is set, each SM subpacket that fails (status not SMP_CMD_STATUS_ACK), will return SMPRET_CMD_STATUS subpacket with the non-SMP_CMD_STATUS_ACK status. otherwise, user configured SM subpacket will be always returned */
-	#define DEVICE_CAPABILITY2_SUPPORT_SCOPE_STATUSBITS_CHANGE_AND_DEBUG12_TRIGGERS BV(19) /* if this is set, scope supports TRIG_STATUSBITS_CHANGE and TRIG_DEBUG1 and TRIG_DEBUG2 */
-	#define DEVICE_CAPABILITY2_TORQUE_BIQUAD_FILTERS_V1 BV(20) /* if this is set, then params 260-269 are supported */
-	#define DEVICE_CAPABILITY2_SUPPORT_TRIGGER_PENDING_PARAMETER_ACTIVATION BV(21) /* if true, SMP_SYSTEM_CONTROL_TRIGGER_PENDING_PARAMETER_ACTIVATION is available */
-	#define DEVICE_CAPABILITY2_HAS_STANDBY BV(22) // true if device enters in STAT_STANDBY automatically after idling
-	#define DEVICE_CAPABILITY2_SUPPORT_SCOPE_SAMPLE_AVERAGING BV(23)
 
 #define SMP_FIRMWARE_VERSION 6010
 #define SMP_FIRMWARE_BACKWARDS_COMP_VERSION 6011
@@ -1254,15 +1087,6 @@
 #define SMP_FIRMWARE_BUILD_REVISION 6016
 #define SMP_DEVICE_TYPE 6020
 #define SMP_PID_FREQUENCY 6055
-
-/*plays sound effect on motor (if motor active). value=sound nr to be played*/
-#define SMP_PLAY_SOUND_EFFECT 6070
-/* safety function to activate high torque mode (in some drive models only).
- * use by reading this SMP first, then writing a correctly calculated response.
- * challenge changes every time a value is written.
- * if wrong answer or 0 is written, hi torq mode deactivates.
- */
-#define SMP_ACTIVATE_HITORQ_MODE_CHALLENGE 6071
 
 //affects only in MC_VECTOR & MC_BLDC mode
 //used in drive development only, do not use if unsure
@@ -1279,7 +1103,6 @@
 	#define CURR_LIMIT_REASON_I2T 3
 	#define CURR_LIMIT_REASON_DRIVE_TEMPERATURE 4
 	#define CURR_LIMIT_REASON_POWER_CAP 5
-	#define CURR_LIMIT_REASON_SAFETY 6
 
 /*IO side CPU sends encoder counter at index every time index is encountered. homing uses this info */
 #define SMP_INDEX_PULSE_LOCATION 8005

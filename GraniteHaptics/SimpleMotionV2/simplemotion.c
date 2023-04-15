@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <inttypes.h>
+
 #include "busdevice.h"
 #include "user_options.h"
 #include "sm485.h"
@@ -68,27 +68,6 @@ smbool smInitialized=smfalse;
 //if debug message has priority this or above will be printed to debug stream
 smVerbosityLevel smDebugThreshold=SMDebugTrace;
 
-#if defined(__unix__) || defined(__APPLE__)
-#include <unistd.h>
-void smSleepMs(int millisecs)
-{
-    usleep(millisecs*1000);
-}
-
-#elif defined(_WIN32) || defined(WIN32)
-#include <windows.h>
-void smSleepMs(int millisecs)
-{
-    Sleep(millisecs);
-}
-#else
-#warning Make sure to implement own smSleepMs function for your platform as it is not one of supported ones (unix/win). For more info, see simplemotion_private.h.
-#endif
-
-
-extern const char *smDebugPrefixString;
-extern const char *smDebugSuffixString;
-
 #ifdef ENABLE_DEBUG_PRINTS
 void smDebug( smbus handle, smVerbosityLevel verbositylevel, char *format, ...)
 {
@@ -97,10 +76,6 @@ void smDebug( smbus handle, smVerbosityLevel verbositylevel, char *format, ...)
 
     if(smDebugOut!=NULL && verbositylevel <= smDebugThreshold )
     {
-        #ifdef SM_ENABLE_DEBUG_PREFIX_STRING //user app may define this macro if need to write custom prefix, if defined, then define also "const char *smDebugPrefixString="my string";" somewhere in your app.
-        fprintf(smDebugOut, smDebugPrefixString);
-        #endif
-
         va_start(fmtargs,format);
         vsnprintf(buffer,sizeof(buffer)-1,format,fmtargs);
         va_end(fmtargs);
@@ -110,21 +85,9 @@ void smDebug( smbus handle, smVerbosityLevel verbositylevel, char *format, ...)
             {
                 fprintf(smDebugOut,"%s: %s",smBus[handle].busDeviceName, buffer);
             }
-            else if(handle==DEBUG_PRINT_RAW)
-            {
-                fprintf(smDebugOut,"%s", buffer);
-            }
-            else
-            {
-                fprintf(smDebugOut,"(bad smbus handle): %s", buffer);
-            }
         }
         else
             fprintf(smDebugOut,"SMLib: %s",buffer);//no handle given
-
-        #ifdef SM_ENABLE_DEBUG_SUFFIX_STRING //user app may define this macro if need to write custom suffix, if defined, then define also "const char *smDebugSuffixString="my string";" somewhere in your app.
-        fprintf(smDebugOut, smDebugSuffixString);
-        #endif
     }
 }
 #endif
@@ -144,6 +107,7 @@ void smResetSM485variables(smbus handle)
     smBus[handle].cmd_send_queue_bytes=0;
     smBus[handle].cmd_recv_queue_bytes=0;
 }
+
 
 smuint16 calcCRC16(smuint8 data, smuint16 crc)
 {
@@ -252,7 +216,7 @@ smbus smOpenBus( const char * devicename )
 }
 
 /** same as smOpenBus but with user supplied port driver callbacks */
-smbus smOpenBusWithCallbacks( const char *devicename, BusdeviceOpen busOpenCallback, BusdeviceClose busCloseCallback, BusdeviceReadBuffer busReadCallback, BusdeviceWriteBuffer busWriteCallback, BusdeviceMiscOperation busMiscOperationCallback )
+smbus smOpenBusWithCallbacks( const char *devicename, BusdeviceOpen busOpenCallback, BusdeviceClose busCloseCallback, BusdeviceReadBuffer busReadCallback, BusdeviceWriteBuffer busWriteCallback )
 {
     int handle;
 
@@ -269,7 +233,7 @@ smbus smOpenBusWithCallbacks( const char *devicename, BusdeviceOpen busOpenCallb
     if(handle>=SM_MAX_BUSES) return -1;
 
     //open bus device
-    smBus[handle].bdHandle=smBDOpenWithCallbacks(devicename, busOpenCallback, busCloseCallback, busReadCallback, busWriteCallback, busMiscOperationCallback );
+    smBus[handle].bdHandle=smBDOpenWithCallbacks(devicename, busOpenCallback, busCloseCallback, busReadCallback, busWriteCallback );
     if(smBus[handle].bdHandle==-1) return -1;
 
     //success
@@ -315,35 +279,6 @@ LIB SM_STATUS smCloseBus( const smbus bushandle )
 
     return SM_OK;
 }
-
-/** Clear pending (stray) bytes in bus device reception buffer and reset receiver state. This may be needed i.e. after restarting device to eliminate clitches that appear in serial line.
-  -return value: a SM_STATUS value, i.e. SM_OK if command succeed
-*/
-LIB SM_STATUS smPurge( const smbus bushandle )
-{
-    //check if bus handle is valid & opened
-    if(smIsHandleOpen(bushandle)==smfalse) return recordStatus(bushandle,SM_ERR_NODEVICE);
-
-    if(smBDMiscOperation( bushandle, MiscOperationPurgeRX )==smtrue)
-        return recordStatus(bushandle,SM_OK);
-    else
-        return recordStatus(bushandle,SM_ERR_BUS);
-}
-
-/** Block until pending TX bytes are phyiscally out. Max blocking time is same that is set with smSetTimeout
-  -return value: a SM_STATUS value, i.e. SM_OK if command succeed
-*/
-LIB SM_STATUS smFlushTX( const smbus bushandle )
-{
-    //check if bus handle is valid & opened
-    if(smIsHandleOpen(bushandle)==smfalse) return recordStatus(bushandle,SM_ERR_NODEVICE);
-
-    if(smBDMiscOperation( bushandle, MiscOperationFlushTX )==smtrue)
-        return recordStatus(bushandle,SM_OK);
-    else
-        return recordStatus(bushandle,SM_ERR_BUS);
-}
-
 
 char *cmdidToStr(smuint8 cmdid )
 {
@@ -410,27 +345,26 @@ SM_STATUS smSendSMCMD( smbus handle, smuint8 cmdid, smuint8 addr, smuint8 datale
             datalen);
 
 
-    smDebug(handle,SMDebugHigh,"  Outbound packet raw data: CMDID (%d) ",cmdid);
+    smDebug(handle,SMDebugHigh,"ID ");
     if( smWriteByte(handle,cmdid, &sendcrc) != smtrue ) return recordStatus(handle,SM_ERR_BUS);
 
     if(cmdid&SMCMD_MASK_N_PARAMS)
     {
-        smDebug(DEBUG_PRINT_RAW,SMDebugHigh,"SIZE (%d bytes) ", datalen);
+        smDebug(handle,SMDebugHigh,"Nparams ");
         if( smWriteByte(handle,datalen, &sendcrc) != smtrue ) return recordStatus(handle,SM_ERR_BUS);
     }
 
-    smDebug(DEBUG_PRINT_RAW,SMDebugHigh,"ADDR (%d) ",addr);
+    smDebug(handle,SMDebugHigh,"ADDR ");
     if( smWriteByte(handle,addr, &sendcrc) != smtrue ) return recordStatus(handle,SM_ERR_BUS);
 
-    smDebug(DEBUG_PRINT_RAW,SMDebugHigh,"PAYLOAD (");
     for(i=0;i<datalen;i++)
     {
-        smDebug(DEBUG_PRINT_RAW,SMDebugHigh,"%02x ",cmddata[i]);
+        smDebug(handle,SMDebugHigh,"DATA ");
         if( smWriteByte(handle,cmddata[i], &sendcrc) != smtrue ) return recordStatus(handle,SM_ERR_BUS);
     }
-    smDebug(DEBUG_PRINT_RAW,SMDebugHigh,") ");
-    smDebug(DEBUG_PRINT_RAW,SMDebugHigh,"CRC (%02x %02x)\n",sendcrc>>8, sendcrc&0xff);
+    smDebug(handle,SMDebugHigh,"CRC ");
     if( smWriteByte(handle,sendcrc>>8, NULL)  != smtrue ) return recordStatus(handle,SM_ERR_BUS);
+    smDebug(handle,SMDebugHigh,"CRC ");
     if( smWriteByte(handle,sendcrc&0xff,NULL) != smtrue ) return recordStatus(handle,SM_ERR_BUS);
 
     //transmit bytes to bus that were written in buffer by smWriteByte calls
@@ -621,12 +555,6 @@ SM_STATUS smTransmitReceiveCommandQueue( const smbus bushandle, const smaddr tar
     {
         stat=smReceiveReturnPacket(bushandle);//blocking wait & receive return values from bus
         if(stat!=SM_OK) return recordStatus(bushandle,stat); //maybe timeouted
-    }
-    if(targetaddress==0)
-    {
-        //make sure we don't return function before all data is really sent as we're not waiting for RX data
-        //note: we're note checking return value of it as some driver's dont support this atm and will return smfalse. TODO fix this & drivers.
-        smFlushTX(bushandle);
     }
 
     smBus[bushandle].transmitBufFull=smfalse;//reset overflow status
@@ -1042,7 +970,7 @@ SM_STATUS smSetParameter( const smbus handle, const smaddr nodeAddress, const sm
 
     smStat|=smAppendSetParamCommandToQueue( handle, paramId, paramVal );
     smStat|=smExecuteCommandQueue(handle,nodeAddress);
-    if(nodeAddress!=0)//don't attempt to read if target address was broadcast address where no slave device will respond
+    if(nodeAddress!=0)//don't anttempt to read if target address was broadcast address where no slave device will respond
         smStat|=smGetQueuedSetParamReturnValue(  handle, &nul );
 
     if(smStat!=SM_OK)
@@ -1120,224 +1048,3 @@ LIB SM_STATUS smGetBusDeviceDetails( smint index, SM_BUS_DEVICE_INFO *info )
     else
         return SM_ERR_NODEVICE;
 }
-
-#ifdef ENABLE_DEBUG_PRINTS
-
-// early exiting snprintf wrapper which will also:
-//  - increment the size variable on success
-//  - early exit on failure
-#define SAFE_SNPRINTF(target, size, remaining, ...) \
-	{ \
-		int _written = snprintf((target), (remaining), __VA_ARGS__); \
-		if (_written < 0) { \
-			return _written; \
-		} \
-		else if ((size_t)_written >= remaining) { \
-			return size + _written; \
-		} \
-		size += _written; \
-	}
-
-// conditional string appending if source & name != 0.
-#define APPEND_IF(source, name, str, target, size, remaining, checked, prefix_len) \
-	{ \
-		if (((source) & (name)) != 0) { \
-			SAFE_SNPRINTF(target, size, remaining, "%s ", &str[prefix_len]); \
-		} \
-		checked |= (name); \
-	}
-
-// removes the single trailing whitespace from the buffer by writing a null on it.
-#define TRIM_TRAILING_WS(str, len) \
-	{ \
-		if (len > 1 && str[len - 1] == ' ') { \
-			str[len - 1] = '\0'; \
-			len--; \
-		} \
-	}
-
-#else
-
-#define SAFE_SNPRINTF(...)
-#define APPEND_IF(...)
-#define TRIM_TRAILING_WS(...)
-
-#endif
-
-// size has been defined as const to help with the name confusion w.r.t macros.
-LIB int smDescribeSmStatus(char* str, const size_t size, SM_STATUS status)
-{
-	size_t len = 0; // mutated by SAFE_SNPRINTF (nested or direct)
-	str[0] = '\0'; // this is probably something snprintf does not always do
-	SM_STATUS checked = 0;
-
-// "local" as in binds the APPEND_IF to local variables declared above
-#define LOCAL_APPEND(name) APPEND_IF(status, name, #name, &str[len], len, size - len, checked, 3)
-
-	if (status == SM_NONE) {
-		// special case: zero
-		SAFE_SNPRINTF(str, len, size - len, "NONE");
-	} else {
-		LOCAL_APPEND(SM_OK);
-		LOCAL_APPEND(SM_ERR_NODEVICE);
-		LOCAL_APPEND(SM_ERR_BUS);
-		LOCAL_APPEND(SM_ERR_COMMUNICATION);
-		LOCAL_APPEND(SM_ERR_PARAMETER);
-		LOCAL_APPEND(SM_ERR_LENGTH);
-	}
-
-#undef LOCAL_APPEND
-
-	SM_STATUS extras = status & ~checked;
-	if (extras != 0) {
-		SAFE_SNPRINTF(&str[len], len, size - len, "EXTRA(%d)", extras);
-	}
-
-	TRIM_TRAILING_WS(str, len);
-
-	return len;
-}
-
-LIB int smDescribeFault(char* str, const size_t size, int32_t faults)
-{
-	size_t len = 0;
-	str[0] = '\0';
-	int32_t checked = 0;
-
-#define LOCAL_APPEND(name) APPEND_IF(faults, name, #name, &str[len], len, size - len, checked, 4)
-
-	LOCAL_APPEND(FLT_FOLLOWERROR);
-	LOCAL_APPEND(FLT_OVERCURRENT);
-	LOCAL_APPEND(FLT_COMMUNICATION)
-	LOCAL_APPEND(FLT_ENCODER)
-	LOCAL_APPEND(FLT_OVERTEMP)
-	LOCAL_APPEND(FLT_UNDERVOLTAGE)
-	LOCAL_APPEND(FLT_OVERVOLTAGE)
-	LOCAL_APPEND(FLT_PROGRAM_OR_MEM)
-	LOCAL_APPEND(FLT_HARDWARE)
-	LOCAL_APPEND(FLT_OVERVELOCITY)
-	LOCAL_APPEND(FLT_INIT)
-	LOCAL_APPEND(FLT_MOTION)
-	LOCAL_APPEND(FLT_RANGE)
-	LOCAL_APPEND(FLT_PSTAGE_FORCED_OFF)
-	LOCAL_APPEND(FLT_HOST_COMM_ERROR)
-	LOCAL_APPEND(FLT_CONFIG)
-	LOCAL_APPEND(FLT_GC_COMM)
-
-#undef LOCAL_APPEND
-
-	const int32_t extras = faults & ~checked;
-	if (extras != 0) {
-		SAFE_SNPRINTF(&str[len], len, size - len, "EXTRA(%" PRId32 ")", extras);
-	}
-
-	TRIM_TRAILING_WS(str, len);
-
-	return len;
-}
-
-LIB int smDescribeStatus(char* str, const size_t size, int32_t status)
-{
-	size_t len = 0;
-	str[0] = '\0';
-	int32_t checked = 0;
-
-#define LOCAL_APPEND(name) APPEND_IF(status, name, #name, &str[len], len, size - len, checked, 5)
-
-	LOCAL_APPEND(STAT_RESERVED_)
-	LOCAL_APPEND(STAT_TARGET_REACHED)
-	LOCAL_APPEND(STAT_FERROR_RECOVERY)
-	LOCAL_APPEND(STAT_RUN)
-	LOCAL_APPEND(STAT_ENABLED)
-	LOCAL_APPEND(STAT_FAULTSTOP)
-	LOCAL_APPEND(STAT_FERROR_WARNING)
-	LOCAL_APPEND(STAT_STO_ACTIVE)
-	LOCAL_APPEND(STAT_SERVO_READY)
-	LOCAL_APPEND(STAT_BRAKING)
-	LOCAL_APPEND(STAT_HOMING)
-	LOCAL_APPEND(STAT_INITIALIZED)
-	LOCAL_APPEND(STAT_VOLTAGES_OK)
-	LOCAL_APPEND(STAT_PERMANENT_STOP)
-	LOCAL_APPEND(STAT_STANDING_STILL)
-	LOCAL_APPEND(STAT_QUICK_STOP_ACTIVE)
-	LOCAL_APPEND(STAT_SAFE_TORQUE_MODE_ACTIVE)
-
-#undef LOCAL_APPEND
-
-	const int32_t extras = status & ~checked;
-	if (extras != 0) {
-		SAFE_SNPRINTF(&str[len], len, size - len, "EXTRA(%" PRId32 ")", extras);
-	}
-
-	TRIM_TRAILING_WS(str, len);
-
-	return len;
-}
-
-#undef APPEND_IF
-#undef SAFE_SNPRINTF
-#undef TRIM_TRAILING_WS
-
-
-LIB SM_STATUS smCheckDeviceCapabilities(const smbus handle, const int nodeAddress,
-                                         const smint32 capabilitiesParameterNr,
-                                         const smint32 requiredCapabilityFlags,
-                                         smbool *resultHasAllCapabilities )
-{
-    SM_STATUS smStat=0;
-    smint32 SMProtocolVersion;
-    *resultHasAllCapabilities=smfalse;//set true later
-
-    smStat|=smRead1Parameter(handle,nodeAddress,SMP_SM_VERSION,&SMProtocolVersion);
-    if(smStat!=SM_OK) return smStat; //error in above call
-
-    if(SMProtocolVersion>=28) //v28+ supports capabilities flags
-    {
-        //all devices with v28+ has two frist capabilities flags
-        if(capabilitiesParameterNr==SMP_DEVICE_CAPABILITIES1 || capabilitiesParameterNr==SMP_DEVICE_CAPABILITIES2)
-        {
-            smint32 capabilities;
-            smStat|=smRead1Parameter(handle,nodeAddress,capabilitiesParameterNr,&capabilities);
-            if(smStat!=SM_OK) return smStat; //error in above call
-
-            if( (capabilities&requiredCapabilityFlags)==requiredCapabilityFlags )//if all required capabilities are supported
-                *resultHasAllCapabilities=smtrue;//set result
-
-            return SM_OK;
-        }
-        else //for rest (future capabilities parameters), test if capabilitiesParameterNr is readable
-        {
-            smint32 capabilities1;
-            smStat|=smRead1Parameter(handle,nodeAddress,SMP_DEVICE_CAPABILITIES1,&capabilities1);
-            if(smStat!=SM_OK) return smStat; //error in above call
-
-            //check if device supports testing whether paramter is available
-            if(capabilities1&DEVICE_CAPABILITY1_SUPPORTS_SMP_PARAMETER_PROPERTIES_MASK)
-            {
-                smint32 paramProperties;
-                //test if parameter is readable
-                smStat|=smRead1Parameter(handle,nodeAddress,capabilitiesParameterNr|SMP_PROPERTIES_MASK,&paramProperties);
-                if(smStat!=SM_OK) return smStat; //error in above call
-
-                if(paramProperties&SMP_PROPERTY_PARAM_IS_READABLE) //requested capabilitiesParameterNr is available
-                {
-                    smint32 capabilities;
-                    smStat|=smRead1Parameter(handle,nodeAddress,capabilitiesParameterNr,&capabilities);
-                    if(smStat!=SM_OK) return smStat; //error in above call
-
-                    if( (capabilities&requiredCapabilityFlags)==requiredCapabilityFlags )//if all required capabilities are supported
-                        *resultHasAllCapabilities=smtrue;//set result
-
-                    return SM_OK;
-                }
-                else
-                    return SM_OK; //requested capabilities parameter is not available, therefore feature requested is not supported in target
-            }
-            else
-                return SM_OK;//capability parameter not available therefore requested capability not available
-        }
-    }
-    else
-        return SM_OK;//capability parameter not available therefore requested capability not available
-}
-

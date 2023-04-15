@@ -6,7 +6,6 @@
 #include "SimpleMotionV2/simplemotion.h"
 
 bool acquired = false;
-smint32 deviceAddress;
 smbus busHandle;
 
 struct HapticDeviceState
@@ -48,36 +47,55 @@ extern "C" {
 	{
 
 		//Connect here to GRANITE
+		smSetTimeout(1000);
+		smSetBaudrate(460800);//set SM default baudrate which is needed to reconnect after increased baudrate (so needed for consequent connect if "use high baudrate" option was set)
 
 		busHandle = smOpenBus(comPort);
 
-
-		if (busHandle >= 0)
+		if (busHandle < 0)
 		{
-			//logMessage(Info, "Successfully connected bus " + ui->busName->text());
-			//deviceAddress = ui->deviceAddress->value();
-			deviceAddress = 1;
-			acquired = true;
-			printf("Successfully connected bus\n");
-		}
-		else
-		{
-			//logMessage(Error, "Couldn't connect to bus " + ui->busName->text());
 			acquired = false;
 			printf("Couldn't connect to bus\n");
 		}
+		else {
+			printf("Connected to bus\n");
+		}
 
+		resetCumulativeStatus(busHandle);//reset possible SM errors
 
-		//TODO port implementation from Qt
-		//checkAndReportSMBusErrors(false);
-
-		//logMessage(Info, "Enabling drive");
-		printf("Enabling drive\n");
-		smSetParameter(busHandle, deviceAddress, SMP_CONTROL_BITS1, SMP_CB1_ENABLE);
-
-		//TODO port implementation from Qt
-		//checkAndReportSMBusErrors(true);
+		int setBPS = 3000000;
 		
+		/*max deviceTimeoutMs valid value 10230 ms. however, this should be set _less_ than timeout period of SM host
+			 * the value that we set earlier here with smSetTimeout) so if device host timeouts,
+			 *it will cause certain timeout on device and reset baudrate to default for successfull reinitialization*/
+		const int deviceTimeoutMs = 500;
+
+		//first set device timeout (watchdog/fault behavior), so if connection is lost, they reset to default baud rate after a certain time period
+//note: we change these settings of all bus devices simultaneously because errors will happen if not all devices have same BPS (address 0=broadcast to all)
+		smSetParameter(busHandle, 0, SMP_FAULT_BEHAVIOR, (deviceTimeoutMs / 10) << 8);//set timeout
+		smSetParameter(busHandle, 0, SMP_BUS_SPEED, setBPS);//set baudrate
+
+		//if all went ok, now device is in new baud rate, switch host PBS too
+		smCloseBus(busHandle);
+		smSetBaudrate(setBPS);
+		busHandle = smOpenBus(comPort);
+
+		if (busHandle < 0)
+		{
+			acquired = false;
+			printf("Couldn't connect to bus\n");
+		}
+		else {
+			printf("Connected in high speed\n");
+			acquired = true;
+		}
+
+		resetCumulativeStatus(busHandle);//reset possible SM errors
+
+		//change smFastUpdateCycle data format
+		smSetParameter(busHandle, 1, SMP_FAST_UPDATE_CYCLE_FORMAT, FAST_UPDATE_CYCLE_FORMAT_ALT1);
+		smSetParameter(busHandle, 2, SMP_FAST_UPDATE_CYCLE_FORMAT, FAST_UPDATE_CYCLE_FORMAT_ALT1);
+
 		if (Debug != NULL && acquired)
 			Debug("Granite Connected");
 		else
@@ -88,18 +106,37 @@ extern "C" {
 
 	int EXPORT_API UpdateHapticDevice(HapticDeviceState* state, HapticDeviceOutput* out)
 	{
+		FastUpdateCycleReadData readData;
+		FastUpdateCycleWriteData writeData;
 	//	if (acquired)
 		{
 			//read the device state 
 
-			state->position = 0.0f;
-			state->angle = 1.0f;
-			state->thumbWheel1 = 2.0f;
-			state->thumbWheel2 = 3.0f;
-			state->tool1Position = 4.0f;
-			state->tool2Position = 5.0f;
-			state->buttonMask = 6;
+			//state->position = 0.0f;
+			//state->angle = 1.0f;
+			//state->thumbWheel1 = 2.0f;
+			//state->thumbWheel2 = 3.0f;
+			//state->tool1Position = 4.0f;
+			//state->tool2Position = 5.0f;
+			//state->buttonMask = 6;
 
+			writeData.ALT1_Write.CB1_Enable = 1;//write enable with fast command. without this, drive gets disabled
+			writeData.ALT1_Write.CB1_BypassTrajPlanner = 1;//write bypass trajectory planner with fast command
+			writeData.ALT1_Write.CB1_QuickStopSet = 0;//do not activate quick stop
+			writeData.ALT1_Write.Setpoint = out->linearCommand;//write setpoint
+
+			smFastUpdateCycleWithStructs(busHandle, 1, writeData, &readData);
+
+			state->position = readData.ALT1_ALT2_Read.PositionFeedback;
+
+			/*writeData.ALT1_Write.CB1_Enable = 1;//write enable with fast command. without this, drive gets disabled
+			writeData.ALT1_Write.CB1_BypassTrajPlanner = 1;//write bypass trajectory planner with fast command
+			writeData.ALT1_Write.CB1_QuickStopSet = 0;//do not activate quick stop
+			writeData.ALT1_Write.Setpoint = out->angleCommand;//write setpoint
+
+			smFastUpdateCycleWithStructs(busHandle, 2, writeData, &readData);
+
+			state->angle = readData.ALT1_ALT2_Read.PositionFeedback;*/
 
 			//set the motors
 			//sharedMemory->linearCommand = out->linearCommand;
@@ -109,43 +146,6 @@ extern "C" {
 			//sharedMemory->calibrate = out->calibrate;
 			//sharedMemory->statusLED = out->statusLED;
 
-			//============================= AUTO WHEEL ==================================================================================
-			//void MW::on_setStartAutoWheel_clicked()
-			//{
-			//	logMessage(Info, "AutoWhell Started");
-			//	smSetParameter(busHandle, deviceAddress, SMP_CONTROL_MODE, CM_POSITION);
-			//	smSetParameter(busHandle, deviceAddress, SMP_ABSOLUTE_SETPOINT, 0);
-			//	smSetParameter(busHandle, deviceAddress, SMP_CONTROL_MODE, CM_TORQUE);
-			//	simTimer.start();
-			//}
-
-			//void MW::simTimerOnTriggered()
-			//{
-			//	smint32 position;
-
-			//	smRead1Parameter(busHandle, deviceAddress, SMP_ACTUAL_POSITION_FB, &position);
-
-			//	logMessage(Info, QString("Position %1").arg(position));
-			//	if (abs(position) > 100) {
-			//		smSetParameter(busHandle, deviceAddress, SMP_ABSOLUTE_SETPOINT, -8 * position);
-			//	}
-			//	else {
-			//		smSetParameter(busHandle, deviceAddress, SMP_ABSOLUTE_SETPOINT, 0);
-			//	}
-			//}
-
-			//void MW::on_setStopAutoWheel_clicked()
-			//{
-			//	logMessage(Info, "AutoWhell Stopped");
-			//	simTimer.stop();
-			//	smSetParameter(busHandle, deviceAddress, SMP_CONTROL_MODE, CM_POSITION);
-			//	smSetParameter(busHandle, deviceAddress, SMP_ABSOLUTE_SETPOINT, 0);
-
-
-			//}
-
-
-			//============================= AUTO WHEEL ==================================================================================
 
 		}
 		return 0;
@@ -162,6 +162,8 @@ extern "C" {
 
 	//	logMessage(Info, "Closing bus (if open)");
 		printf("Closing bus (if open)");
+		smSetParameter(busHandle, 1, SMP_ABSOLUTE_SETPOINT, 0);
+		smSetParameter(busHandle, 2, SMP_ABSOLUTE_SETPOINT, 0);
 		smCloseBus(busHandle);
 
 

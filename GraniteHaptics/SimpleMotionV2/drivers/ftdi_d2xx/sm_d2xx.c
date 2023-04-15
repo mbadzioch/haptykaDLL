@@ -96,26 +96,6 @@ smBusdevicePointer d2xxPortOpen(const char *port_device_name, smint32 baudrate_b
             goto error;
         }
 
-        /* Workaround FTDI D2XX bug where first FT_Reads will fail with timeout even when there IS data available.
-         * In the workaround we set timeout long enough and try read one byte and let it timeout. After this consequent FT_Reads seem to work properly.
-         * 250 ms seemed to be barely enough, so use 350ms to for some safety margin.
-         */
-        if(FT_SetTimeouts(h,350,350)!=FT_OK)
-        {
-            smDebug( -1, SMDebugLow, "FTDI port error: failed to set workaround timeout\n");
-            goto error;
-        }
-        else
-        {
-            DWORD BytesReceived;
-            char buf[1];
-            if(FT_Read(h,buf,1,&BytesReceived)!=FT_OK) //we expect this to return 0 bytes after 350ms timeout
-            {
-                smDebug( -1, SMDebugLow, "FTDI port error: FT_Read workaround failed\n");
-                goto error;
-            }
-        }
-
         if(FT_SetTimeouts(h,readTimeoutMs,readTimeoutMs)!=FT_OK)
         {
             smDebug( -1, SMDebugLow, "FTDI port error: failed to set timeout\n");
@@ -185,52 +165,6 @@ smint32 d2xxPortWrite(smBusdevicePointer busdevicepointer, unsigned char *buf, s
     }
 
     return BytesWritten;
-}
-
-smbool d2xxPortMiscOperation(smBusdevicePointer busdevicePointer, BusDeviceMiscOperationType operation)
-{
-    FT_HANDLE handle=(FT_HANDLE)busdevicePointer;
-
-    switch(operation)
-    {
-        case MiscOperationPurgeRX:
-            if(FT_Purge(handle,FT_PURGE_RX)!=FT_OK)
-            {
-                smDebug( -1, SMDebugLow, "FTDI port error: failed to purge\n");
-                return smfalse;
-            }
-            return smtrue;
-        break;
-        case MiscOperationFlushTX:
-        {
-            int timespent_ms=0;
-            while(1)
-            {
-                DWORD InRxQueue, InTxQueue, EventStatus;
-                FT_STATUS stat=FT_GetStatus(handle, &InRxQueue, &InTxQueue, &EventStatus);
-
-                if(stat!=FT_OK)
-                {
-                    smDebug( -1, SMDebugLow, "FTDI port error: FT_GetStatus failed\n");
-                    return smfalse;
-                }
-
-                if(InTxQueue==0)//no data to be sent in buffer
-                    return smtrue;
-
-                //wait before next loop round
-                smSleepMs(1);
-                timespent_ms++;
-                if(timespent_ms>=readTimeoutMs)
-                    return smfalse;//timeouted
-            };
-        }
-        break;
-    default:
-        smDebug( -1, SMDebugLow, "FTDI port error: given MiscOperataion not implemented\n");
-        return smfalse;
-        break;
-    }
 }
 
 
