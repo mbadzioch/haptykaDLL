@@ -95,6 +95,8 @@ extern "C" {
 		//change smFastUpdateCycle data format
 		smSetParameter(busHandle, 1, SMP_FAST_UPDATE_CYCLE_FORMAT, FAST_UPDATE_CYCLE_FORMAT_ALT1);
 		smSetParameter(busHandle, 2, SMP_FAST_UPDATE_CYCLE_FORMAT, FAST_UPDATE_CYCLE_FORMAT_ALT1);
+		smSetParameter(busHandle, 3, SMP_FAST_UPDATE_CYCLE_FORMAT, FAST_UPDATE_CYCLE_FORMAT_ALT1);
+		smSetParameter(busHandle, 4, SMP_FAST_UPDATE_CYCLE_FORMAT, FAST_UPDATE_CYCLE_FORMAT_ALT1);
 
 		if (Debug != NULL && acquired)
 			Debug("Granite Connected");
@@ -120,6 +122,7 @@ extern "C" {
 			//state->tool2Position = 5.0f;
 			//state->buttonMask = 6;
 
+			
 			writeData.ALT1_Write.CB1_Enable = 1;//write enable with fast command. without this, drive gets disabled
 			writeData.ALT1_Write.CB1_BypassTrajPlanner = 1;//write bypass trajectory planner with fast command
 			writeData.ALT1_Write.CB1_QuickStopSet = 0;//do not activate quick stop
@@ -129,14 +132,35 @@ extern "C" {
 
 			state->position = readData.ALT1_ALT2_Read.PositionFeedback;
 
-			/*writeData.ALT1_Write.CB1_Enable = 1;//write enable with fast command. without this, drive gets disabled
+
+			writeData.ALT1_Write.CB1_Enable = 1;//write enable with fast command. without this, drive gets disabled
 			writeData.ALT1_Write.CB1_BypassTrajPlanner = 1;//write bypass trajectory planner with fast command
 			writeData.ALT1_Write.CB1_QuickStopSet = 0;//do not activate quick stop
 			writeData.ALT1_Write.Setpoint = out->angleCommand;//write setpoint
 
 			smFastUpdateCycleWithStructs(busHandle, 2, writeData, &readData);
 
-			state->angle = readData.ALT1_ALT2_Read.PositionFeedback;*/
+			state->angle = readData.ALT1_ALT2_Read.PositionFeedback;
+
+
+			writeData.ALT1_Write.CB1_Enable = 1;//write enable with fast command. without this, drive gets disabled
+			writeData.ALT1_Write.CB1_BypassTrajPlanner = 1;//write bypass trajectory planner with fast command
+			writeData.ALT1_Write.CB1_QuickStopSet = 0;//do not activate quick stop
+			writeData.ALT1_Write.Setpoint = out->wheel1Command;//write setpoint
+
+			smFastUpdateCycleWithStructs(busHandle, 3, writeData, &readData);
+
+			state->thumbWheel1 = readData.ALT1_ALT2_Read.PositionFeedback;
+
+
+			writeData.ALT1_Write.CB1_Enable = 1;//write enable with fast command. without this, drive gets disabled
+			writeData.ALT1_Write.CB1_BypassTrajPlanner = 1;//write bypass trajectory planner with fast command
+			writeData.ALT1_Write.CB1_QuickStopSet = 0;//do not activate quick stop
+			writeData.ALT1_Write.Setpoint = out->wheel2Command;//write setpoint
+
+			smFastUpdateCycleWithStructs(busHandle, 4, writeData, &readData);
+
+			state->thumbWheel2 = readData.ALT1_ALT2_Read.PositionFeedback;
 
 			//set the motors
 			//sharedMemory->linearCommand = out->linearCommand;
@@ -145,7 +169,6 @@ extern "C" {
 			//sharedMemory->wheel2Command = out->wheel2Command;
 			//sharedMemory->calibrate = out->calibrate;
 			//sharedMemory->statusLED = out->statusLED;
-
 
 		}
 		return 0;
@@ -164,6 +187,8 @@ extern "C" {
 		printf("Closing bus (if open)");
 		smSetParameter(busHandle, 1, SMP_ABSOLUTE_SETPOINT, 0);
 		smSetParameter(busHandle, 2, SMP_ABSOLUTE_SETPOINT, 0);
+		smSetParameter(busHandle, 3, SMP_ABSOLUTE_SETPOINT, 0);
+		smSetParameter(busHandle, 4, SMP_ABSOLUTE_SETPOINT, 0);
 		smCloseBus(busHandle);
 
 
